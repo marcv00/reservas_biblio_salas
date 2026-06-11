@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { type Sala } from '../types';
 import { ModalWrapper } from './ModalWrapper';
-import { TIEMPO_RESERVA_MINUTOS } from '../config/data';
-import { Clock, Users, CalendarDays, Loader2 } from 'lucide-react';
+import { apiService } from '../services/api';
+import { Clock, Users, CalendarDays, Loader2, Save, FileText } from 'lucide-react';
 
 interface Props {
   sala: Sala;
@@ -13,11 +13,13 @@ interface Props {
 export const DetallesReserva: React.FC<Props> = ({ sala, onClose, onLiberar }) => {
   const [timeLeft, setTimeLeft] = useState<string>('Calculando...');
   const [isLoading, setIsLoading] = useState(false);
+  const [obs, setObs] = useState('');
+  const [savingObs, setSavingObs] = useState(false);
 
   useEffect(() => {
     if (!sala.ultRes) return;
     const start = new Date(sala.ultRes).getTime();
-    const end = start + (TIEMPO_RESERVA_MINUTOS * 60 * 1000);
+    const end = start + ((sala.duracion || 60) * 60 * 1000); 
 
     const updateTimer = () => {
       const now = Date.now();
@@ -32,69 +34,173 @@ export const DetallesReserva: React.FC<Props> = ({ sala, onClose, onLiberar }) =
       const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const s = Math.floor((diff % (1000 * 60)) / 1000);
       
-      setTimeLeft(
-        `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-      );
+      setTimeLeft(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+    };
+
+    const loadCurrentObs = async () => {
+      if (sala.idReserva) {
+        const resData = await apiService.buscarReserva(sala.idReserva);
+        if (resData) setObs(resData.observaciones || ''); 
+      }
     };
 
     updateTimer();
+    loadCurrentObs();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [sala]);
 
-  const fechaInicioStr = sala.ultRes 
-    ? new Date(sala.ultRes).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
-    : '';
-
-  const handleLiberarClick = async () => {
-    setIsLoading(true);
-    await onLiberar(sala);
+  const handleUpdateObs = async () => {
+    if (!sala.idReserva) return;
+    setSavingObs(true);
+    const ok = await apiService.guardarObservaciones(sala.idReserva, obs);
+    if (ok) alert("Observaciones guardadas de forma live en HistoricoUso.");
+    else alert("Error al actualizar observaciones.");
+    setSavingObs(false);
   };
 
+  // Formatear hora de inicio
+  const horaInicio = sala.ultRes 
+    ? new Date(sala.ultRes).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+    : 'N/A';
+
+  // Calcular y formatear hora de liberación exacta
+  const horaLiberacion = sala.ultRes
+    ? new Date(new Date(sala.ultRes).getTime() + ((sala.duracion || 60) * 60 * 1000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'N/A';
+
   return (
-    <ModalWrapper title={`Detalles: ${sala.nombre}`} onClose={onClose}>
-      <div className="space-y-4">
+    <ModalWrapper 
+      title={`Detalles: ${sala.nombre}`} 
+      onClose={onClose}
+      className="max-w-md md:max-w-4xl"
+    >
+      {/* Contenedor principal con scroll en Y controlado solo para mobile si hace falta */}
+      <div className="max-h-[80vh] md:max-h-none overflow-y-auto md:overflow-visible pr-1 md:pr-0 space-y-4 md:space-y-0">
         
-        <div className="flex items-start gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
-          <Users className="text-gray-400 mt-0.5" size={20}/>
-          <div className="w-full">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Ocupantes ({sala.ocupantes?.length || 0})</p>
-            <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
-              {sala.ocupantes?.map((est, i) => (
-                <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded-md border border-gray-200">
-                  <span className="font-semibold text-gray-800">{est.codigo}</span>
-                  <span className="text-gray-500 text-xs truncate max-w-[120px]">{est.carrera}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* ================= COLUMNA IZQUIERDA: ALUMNOS / OCUPANTES ================= */}
+          <div className="space-y-4 flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs font-bold text-gray-500 bg-gray-100 p-2.5 rounded-xl">
+                <span>CÓDIGO DE RESERVA:</span>
+                <span className="text-black font-mono tracking-wider text-sm bg-white px-2 py-0.5 rounded border">
+                  {sala.idReserva || 'N/A'}
+                </span>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <div className="flex items-center gap-2 mb-3 text-gray-700 font-semibold text-sm">
+                  <Users size={18} className="text-gray-500" />
+                  <span>Ocupantes ({sala.ocupantes?.length || 0})</span>
                 </div>
-              ))}
+                
+                {/* Lista adaptada con max-height para UI limpia */}
+                <div className="space-y-2 max-h-[40vh] md:max-h-[380px] overflow-y-auto pr-1">
+                  {sala.ocupantes && sala.ocupantes.length > 0 ? (
+                    sala.ocupantes.map((est, i) => (
+                      <div key={i} className="flex flex-col gap-0.5 text-xs bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                        <span className="font-bold text-gray-800">{est.codigo} ({est.tipo || 'Regular'})</span>
+                        <span className="text-gray-600 font-medium text-[11px] mt-0.5">{est.carrera}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-gray-400 text-center py-4">No hay alumnos registrados.</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
-          <CalendarDays className="text-gray-400" size={20}/>
-          <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wider">Inicio de Reserva</p>
-            <p className="font-semibold text-gray-800">{fechaInicioStr}</p>
+          {/* ================= COLUMNA DERECHA: OBSERVACIONES Y MÉTRICAS ================= */}
+          <div className="space-y-4 flex flex-col justify-between">
+            
+            <div className="space-y-4">
+              {/* Sección de Modificación de Observaciones Ampliada y Scrolleable */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-500 flex items-center gap-1 uppercase tracking-wider">
+                  <FileText size={14}/> Observaciones de Uso
+                </label>
+                <div className="relative bg-gray-50 rounded-xl border border-gray-200 p-3 focus-within:border-orange-500 transition-colors">
+                  <textarea 
+                    rows={4}
+                    value={obs}
+                    onChange={(e) => setObs(e.target.value)}
+                    placeholder="Modificar incidencias u observaciones grupales de forma live..."
+                    className="w-full bg-transparent text-sm outline-none resize-none min-h-[100px] max-h-[160px] overflow-y-auto text-gray-800 placeholder:text-gray-400"
+                  />
+                  <div className="flex justify-end pt-2 border-t border-gray-100 mt-2">
+                    <button 
+                      type="button"
+                      onClick={handleUpdateObs}
+                      disabled={savingObs}
+                      className="bg-orange-600 text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-orange-700 transition-colors disabled:opacity-50 shadow-sm"
+                    >
+                      {savingObs ? <Loader2 size={14} className="animate-spin"/> : <Save size={14} />}
+                      Guardar
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tiempos de la reserva: Inicio y Liberación */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <CalendarDays className="text-gray-400" size={18}/>
+                  <div>
+                    <p className="text-[10px] text-gray-400 uppercase font-medium">Inicio</p>
+                    <p className="font-bold text-xs text-gray-800">{horaInicio}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <CalendarDays className="text-orange-500" size={18}/>
+                  <div>
+                    <p className="text-[10px] text-orange-600 uppercase font-medium">Liberación</p>
+                    <p className="font-bold text-xs text-orange-800">{horaLiberacion}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Duración y Tiempo Restante */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="flex sm:col-span-1 items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <Clock className="text-gray-400" size={18}/>
+                  <div>
+                    <p className="text-[10px] text-gray-400 uppercase font-medium">Duración</p>
+                    <p className="font-bold text-xs text-gray-800">{sala.duracion || 60} min</p>
+                  </div>
+                </div>
+                
+                {/* Banner de Tiempo Restante Expandido a dos columnas en layouts pequeños */}
+                <div className="flex sm:col-span-2 items-center gap-3 bg-red-50 p-3 rounded-xl border border-red-100">
+                  <Clock className="text-red-500" size={20}/>
+                  <div>
+                    <p className="text-[10px] text-red-600 uppercase font-bold tracking-wider">Tiempo Restante</p>
+                    <p className="text-xl font-black text-red-700 tabular-nums tracking-tight">{timeLeft}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ================= BOTONES DE ACCIÓN (INFERIOR DERECHA) ================= */}
+            <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row md:justify-end gap-3">
+              
+              
+              <button 
+                type="button"
+                onClick={async () => { setIsLoading(true); await onLiberar(sala); }}
+                disabled={isLoading}
+                className="w-full sm:w-auto h-12 px-6 flex justify-center items-center bg-white border-2 border-red-200 hover:bg-red-50 text-red-600 rounded-xl text-sm font-bold transition-colors disabled:opacity-70 order-1 sm:order-2 shadow-sm gap-2"
+              >
+                {isLoading ? <Loader2 className="animate-spin" size={18} /> : "Liberar Sala Manualmente"}
+              </button>
+            </div>
+
           </div>
+
         </div>
 
-        <div className="flex items-center gap-3 bg-red-50 p-4 rounded-xl border border-red-100">
-          <Clock className="text-red-500" size={24}/>
-          <div>
-            <p className="text-xs text-red-600 uppercase tracking-wider font-semibold">Tiempo Restante</p>
-            <p className="text-2xl font-bold text-red-700 tabular-nums">{timeLeft}</p>
-          </div>
-        </div>
-
-        <div className="pt-2">
-          <button 
-            onClick={handleLiberarClick}
-            disabled={isLoading}
-            className="w-full h-12 flex justify-center items-center bg-white border-2 border-red-100 hover:bg-red-50 text-red-600 rounded-xl font-bold transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {isLoading ? <Loader2 className="animate-spin" size={20} /> : "Liberar Sala Manualmente"}
-          </button>
-        </div>
       </div>
     </ModalWrapper>
   );
