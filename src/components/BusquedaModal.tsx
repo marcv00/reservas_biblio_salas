@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { ModalWrapper } from './ModalWrapper';
 import { apiService } from '../services/api';
 import { type ReservaHistorica } from '../types';
-import { Loader2, Save, FileText } from 'lucide-react';
+import { Loader2, Save, FileText, AlertCircle } from 'lucide-react'; // Añadido AlertCircle
 
 export const BusquedaModal: React.FC<{ idReserva: string; onClose: () => void }> = ({ idReserva, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [reserva, setReserva] = useState<ReservaHistorica | null>(null);
   const [obs, setObs] = useState('');
   const [saving, setSaving] = useState(false);
+  // Feedback dinámico para el guardado
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
     const fetchReserva = async () => {
@@ -16,9 +18,6 @@ export const BusquedaModal: React.FC<{ idReserva: string; onClose: () => void }>
       if (data) {
         setReserva(data);
         setObs(data.observaciones || '');
-      } else {
-        alert("No se encontró ninguna reserva con ese código.");
-        onClose();
       }
       setLoading(false);
     };
@@ -27,14 +26,18 @@ export const BusquedaModal: React.FC<{ idReserva: string; onClose: () => void }>
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveStatus('idle');
     const success = await apiService.guardarObservaciones(idReserva, obs);
     if (success) {
-      alert("Observaciones actualizadas en HistoricoUso correctamente.");
-      onClose();
+      setSaveStatus('success');
+      // Cerramos de forma elegante un momento después de avisar el éxito
+      setTimeout(() => {
+        onClose();
+      }, 1000);
     } else {
-      alert("Error al actualizar observaciones.");
+      setSaveStatus('error');
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   return (
@@ -77,13 +80,34 @@ export const BusquedaModal: React.FC<{ idReserva: string; onClose: () => void }>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="w-full h-12 bg-black hover:bg-gray-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+            className={`w-full h-12 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 ${
+              saveStatus === 'success' ? 'bg-green-600' :
+              saveStatus === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-black hover:bg-gray-800'
+            }`}
           >
             {saving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
-            Guardar Cambios
+            {saveStatus === 'success' ? '¡Guardado correctamente!' : saveStatus === 'error' ? 'Error al actualizar' : 'Guardar Cambios'}
           </button>
         </div>
-      ) : null}
+      ) : (
+        /* Caso: No se encontró la reserva (Manejo limpio sin alert) */
+        <div className="text-center p-6 space-y-4">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-50 text-red-500">
+            <AlertCircle size={24} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Reserva no encontrada</h3>
+            <p className="text-xs text-gray-500 mt-1">No existe ningún registro asociado al código proporcionado.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition-colors"
+          >
+            Regresar
+          </button>
+        </div>
+      )}
     </ModalWrapper>
   );
 };

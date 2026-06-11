@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { type Sala } from '../types';
 import { ModalWrapper } from './ModalWrapper';
 import { apiService } from '../services/api';
-import { Clock, Users, CalendarDays, Loader2, Save, FileText } from 'lucide-react';
+import { Clock, Users, CalendarDays, Loader2, Save, FileText, CheckCircle2, XCircle } from 'lucide-react';
 
 interface Props {
   sala: Sala;
@@ -15,9 +15,12 @@ export const DetallesReserva: React.FC<Props> = ({ sala, onClose, onLiberar }) =
   const [isLoading, setIsLoading] = useState(false);
   const [obs, setObs] = useState('');
   const [savingObs, setSavingObs] = useState(false);
+  
+  // Estado para manejar el feedback visual en lugar de los 'alerts' nativos
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    if (!sala.ultRes) return;
+    if (!sala.ultRes || !sala.ultRes) return; // Validación preventiva para fechas
     const start = new Date(sala.ultRes).getTime();
     const end = start + ((sala.duracion || 60) * 60 * 1000); 
 
@@ -53,10 +56,22 @@ export const DetallesReserva: React.FC<Props> = ({ sala, onClose, onLiberar }) =
   const handleUpdateObs = async () => {
     if (!sala.idReserva) return;
     setSavingObs(true);
+    setSaveStatus('idle');
+
     const ok = await apiService.guardarObservaciones(sala.idReserva, obs);
-    if (ok) alert("Observaciones guardadas de forma live en HistoricoUso.");
-    else alert("Error al actualizar observaciones.");
+    
+    if (ok) {
+      setSaveStatus('success');
+    } else {
+      setSaveStatus('error');
+    }
+    
     setSavingObs(false);
+
+    // Restaurar el botón a su estado original después de 3 segundos
+    setTimeout(() => {
+      setSaveStatus('idle');
+    }, 3000);
   };
 
   // Formatear hora de inicio
@@ -130,15 +145,43 @@ export const DetallesReserva: React.FC<Props> = ({ sala, onClose, onLiberar }) =
                     placeholder="Modificar incidencias u observaciones grupales de forma live..."
                     className="w-full bg-transparent text-sm outline-none resize-none min-h-[100px] max-h-[160px] overflow-y-auto text-gray-800 placeholder:text-gray-400"
                   />
-                  <div className="flex justify-end pt-2 border-t border-gray-100 mt-2">
+                  <div className="flex justify-between items-center pt-2 border-t border-gray-100 mt-2">
+                    
+                    {/* Mensaje Informativo Inline */}
+                    <div className="flex items-center gap-1">
+                      {saveStatus === 'success' && (
+                        <span className="text-[11px] font-semibold text-green-600 flex items-center gap-1 animate-in fade-in duration-200">
+                          <CheckCircle2 size={12} /> Guardado live en HistoricoUso
+                        </span>
+                      )}
+                      {saveStatus === 'error' && (
+                        <span className="text-[11px] font-semibold text-red-600 flex items-center gap-1 animate-in fade-in duration-200">
+                          <XCircle size={12} /> Error al actualizar observaciones
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Botón Inteligente de feedback cambiante */}
                     <button 
                       type="button"
                       onClick={handleUpdateObs}
                       disabled={savingObs}
-                      className="bg-orange-600 text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-orange-700 transition-colors disabled:opacity-50 shadow-sm"
+                      className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50 shadow-sm text-white ${
+                        saveStatus === 'success' ? 'bg-green-600 hover:bg-green-700' :
+                        saveStatus === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'
+                      }`}
                     >
-                      {savingObs ? <Loader2 size={14} className="animate-spin"/> : <Save size={14} />}
-                      Guardar
+                      {savingObs ? (
+                        <Loader2 size={14} className="animate-spin"/>
+                      ) : saveStatus === 'success' ? (
+                        <CheckCircle2 size={14} />
+                      ) : saveStatus === 'error' ? (
+                        <XCircle size={14} />
+                      ) : (
+                        <Save size={14} />
+                      )}
+                      
+                      {saveStatus === 'success' ? '¡Listo!' : saveStatus === 'error' ? 'Error' : 'Guardar'}
                     </button>
                   </div>
                 </div>
@@ -185,8 +228,6 @@ export const DetallesReserva: React.FC<Props> = ({ sala, onClose, onLiberar }) =
 
             {/* ================= BOTONES DE ACCIÓN (INFERIOR DERECHA) ================= */}
             <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row md:justify-end gap-3">
-              
-              
               <button 
                 type="button"
                 onClick={async () => { setIsLoading(true); await onLiberar(sala); }}
