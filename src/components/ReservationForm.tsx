@@ -44,7 +44,7 @@ export const ReservationForm: React.FC<Props> = ({ sala, carrerasLista, tiposLis
     setOcupantes(newOcupantes);
   };
 
-  const handleNextStep = (e: React.MouseEvent) => {
+  const handleNextStep = () => {
     const step1Form = document.getElementById('reservation-form') as HTMLFormElement;
     if (step1Form && step1Form.checkValidity()) {
       setStep(2);
