@@ -3,3 +3,11 @@
 body {
   background-color: #f9fafb;
 }
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+ 
+@theme {
+  --animate-shimmer: shimmer 1.4s infinite;
+}
